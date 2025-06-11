@@ -22,6 +22,7 @@
 firebase-service-account.json
 node_modules/
 __pycache__/
+__pycache__/
 
 npm-debug.log*
 yarn-debug.log*
