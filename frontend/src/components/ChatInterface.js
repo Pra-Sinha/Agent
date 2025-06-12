@@ -9,6 +9,7 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import { signOut } from "firebase/auth";
 import { v4 as uuidv4 } from "uuid";
 import './ChatInterface.css';
+import { getAuth } from "firebase/auth";
 
 function SignOutButton() {
   return (
@@ -38,18 +39,25 @@ export default function ChatInterface() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // 🔍 Log Firebase ID token to console for debugging
+  useEffect(() => {
+    auth.onAuthStateChanged((user) => {
+      if (user) {
+        user.getIdToken().then(token => {
+          console.log("✅ Firebase Auth token:", token);
+        });
+      } else {
+        console.warn("⚠️ No user is signed in");
+      }
+    });
+  }, []);
+
   const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 
 const simulateTyping = async (text) => {
-  let typedText = "";
-
   for (let i = 0; i < text.length; i++) {
-    typedText += text[i];
-
+    const currentText = text.slice(0, i + 1);
     await delay(10);
-
-    // Copy typedText into a new variable to avoid closure warning
-    const currentText = typedText;
 
     setMessages((prev) => {
       const updated = [...prev];
@@ -63,55 +71,61 @@ const simulateTyping = async (text) => {
 };
 
 
-
   const handleSend = async (e) => {
-    e.preventDefault();
-    if (!message.trim() || isLoading) return;
+  e.preventDefault();
+  if (!message.trim() || isLoading) return;
 
-    const userMessage = message;
-    setMessages(prev => [...prev, { text: userMessage, isUser: true, timestamp: new Date() }]);
-    setMessage("");
-    setError("");
-    setIsLoading(true);
+  const userMessage = message;
+  setMessages(prev => [...prev, { text: userMessage, isUser: true, timestamp: new Date() }]);
+  setMessage("");
+  setError("");
+  setIsLoading(true);
 
-    try {
-      const idToken = await auth.currentUser.getIdToken();
+  try {
+    const auth = getAuth(); // <-- safer: reinitialize just in case
+    const currentUser = auth.currentUser;
 
-      const response = await fetch("http://localhost:8000/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${idToken}`
-        },
-        body: JSON.stringify({
-          message: userMessage,
-          session_id: sessionId
-        })
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        // Placeholder while simulating
-        setMessages(prev => [
-          ...prev,
-          { text: "", isUser: false, timestamp: new Date() }
-        ]);
-        await simulateTyping(data.response);
-      } else {
-        throw new Error(data.detail || "Something went wrong.");
-      }
-
-    } catch (err) {
-      setMessages(prev => [
-        ...prev,
-        { text: "⚠️ Your bot failed to respond. Try again.", isUser: false, timestamp: new Date() }
-      ]);
-      setError(err.message);
+    if (!currentUser) {
+      throw new Error("User is not logged in.");
     }
 
-    setIsLoading(false);
-  };
+    const idToken = await currentUser.getIdToken();
+
+    const response = await fetch("http://localhost:8000/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${idToken}`
+      },
+      body: JSON.stringify({
+        message: userMessage,
+        session_id: sessionId
+      })
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      setMessages(prev => [
+        ...prev,
+        { text: "", isUser: false, timestamp: new Date() }
+      ]);
+      await simulateTyping(data.response);
+    } else {
+      throw new Error(data.detail || "Something went wrong.");
+    }
+
+  } catch (err) {
+    setMessages(prev => [
+      ...prev,
+      { text: "⚠️ Your bot failed to respond. Try again.", isUser: false, timestamp: new Date() }
+    ]);
+    setError(err.message);
+  }
+
+  setIsLoading(false);
+};
+
 
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {

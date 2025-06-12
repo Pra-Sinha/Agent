@@ -1,15 +1,18 @@
 import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime, timedelta
+from google.cloud import firestore as gcf
 
-# ✅ Prevent duplicate initialization
+# ✅ Prevent duplicate Firebase initialization
 if not firebase_admin._apps:
     cred = credentials.Certificate("firebase-service-account.json")
     firebase_admin.initialize_app(cred)
 
+# ✅ Firestore client
 db = firestore.client()
 
-# ✅ Helper Functions (used in main.py)
+# 🔄 Session Management Functions
+
 def get_session(session_id: str):
     """Fetch session data from Firestore"""
     try:
@@ -20,20 +23,33 @@ def get_session(session_id: str):
         return None
 
 def update_session(session_id: str, updates: dict):
-    """Update existing session"""
+    """Update an existing session; create if not found"""
     try:
-        db.collection("chat_sessions").document(session_id).update(updates)
+        doc_ref = db.collection("chat_sessions").document(session_id)
+        if not doc_ref.get().exists:
+            print(f"[Memory] Creating new session for update: {session_id}")
+            data = {
+                "created_at": datetime.now(),
+                "updated_at": datetime.now(),
+                **updates
+            }
+            doc_ref.set(data)
+        else:
+            print(f"[Memory] Updating session: {session_id}")
+            updates["updated_at"] = datetime.now()
+            doc_ref.update(updates)
     except Exception as e:
         print(f"[Memory] Error in update_session: {e}")
 
 def create_new_session(session_id: str, initial_data: dict):
-    """Create new session"""
+    """Create a new session with initial data"""
     try:
         db.collection("chat_sessions").document(session_id).set(initial_data)
     except Exception as e:
         print(f"[Memory] Error in create_new_session: {e}")
 
-# ✅ OOP-based session memory (Optional but used in other parts of your app)
+# 🧠 Optional Class for OOP-Based Session Management
+
 class ConversationMemory:
     def __init__(self, user_id):
         self.user_id = user_id
@@ -42,9 +58,8 @@ class ConversationMemory:
     def _get_session(self):
         """Fetch session from Firestore or create a new one"""
         try:
-            doc_ref = db.collection('chat_sessions').document(self.user_id)
+            doc_ref = db.collection("chat_sessions").document(self.user_id)
             doc = doc_ref.get()
-
             if doc.exists:
                 session = doc.to_dict()
                 if datetime.now() - session.get('last_updated', datetime.now()) > timedelta(minutes=30):
@@ -57,7 +72,6 @@ class ConversationMemory:
             return self._create_new_session()
 
     def _create_new_session(self):
-        """New session structure"""
         return {
             'messages': [
                 {
